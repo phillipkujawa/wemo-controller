@@ -1,244 +1,132 @@
-from js import Response, Headers, fetch
+from js import Response, Headers, fetch, Object
 import json
-import uuid
 
 async def on_fetch(request, env):
-    """Main request handler for Cloudflare Python Worker"""
+    """Cloudflare Python Worker for Govee API"""
 
-    url = request.url
-    method = request.method
+    # Get request details
+    url = str(request.url)
+    method = str(request.method)
 
     # CORS headers
-    cors_headers = {
+    headers_dict = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Content-Type": "application/json"
     }
 
-    # Handle CORS preflight
+    # Handle OPTIONS
     if method == "OPTIONS":
-        return Response.new(None, status=204, headers=Headers.new(cors_headers))
+        return Response.new("", status=204, headers=Headers.new(headers_dict))
 
-    # Root endpoint
-    if url.endswith("/") or url.endswith(env.WORKER_URL):
-        return json_response({
+    # Parse path
+    if "workers.dev" in url:
+        path = url.split("workers.dev")[1]
+    else:
+        path = "/"
+
+    # Route: Health check
+    if path == "/" or path == "":
+        return make_json_response({
             "status": "ok",
-            "message": "WeMo + Govee Controller API",
-            "version": "2.0.0",
-            "platform": "Cloudflare Python Workers"
-        }, cors_headers)
+            "message": "Govee Controller API",
+            "version": "1.0.0"
+        }, headers_dict)
 
-    # Govee discover endpoint
-    if "/govee/discover" in url and method == "POST":
-        return await govee_discover(env, cors_headers)
+    # Route: Discover Govee devices
+    if path == "/govee/discover" and method == "POST":
+        try:
+            # Call Govee API
+            govee_url = "https://openapi.api.govee.com/router/api/v1/user/devices"
+            govee_headers = Headers.new({
+                "Govee-API-Key": env.GOVEE_API_KEY,
+                "Content-Type": "application/json"
+            })
 
-    # Govee list devices
-    if "/govee/devices" in url and method == "GET":
-        return await govee_list_devices(env, cors_headers)
+            govee_response = await fetch(govee_url, Object.new(method="GET", headers=govee_headers))
+            data = await govee_response.json()
 
-    # Govee control device
-    if "/govee/devices/" in url and method == "POST":
-        parts = url.split("/govee/devices/")[1].split("/")
-        if len(parts) >= 2:
+            if data.code != 200:
+                return make_json_response({"error": "Govee API error", "details": data}, headers_dict, 502)
+
+            devices = data.data or []
+
+            # Cache in KV
+            await env.DEVICES_KV.put("govee_devices", json.dumps(devices))
+
+            # Return simplified device list
+            result = []
+            for device in devices:
+                result.append({
+                    "id": f"{device['sku']}|{device['device']}",
+                    "name": device.get("deviceName", "Unknown"),
+                    "model": device["sku"],
+                    "device": device["device"],
+                    "controllable": True,
+                    "state": "unknown"
+                })
+
+            return make_json_response(result, headers_dict)
+
+        except Exception as e:
+            return make_json_response({"error": str(e)}, headers_dict, 500)
+
+    # Route: List devices
+    if path == "/govee/devices" and method == "GET":
+        try:
+            cached = await env.DEVICES_KV.get("govee_devices")
+
+            if not cached:
+                return make_json_response([], headers_dict)
+
+            devices = json.loads(cached)
+
+            result = []
+            for device in devices:
+                result.append({
+                    "id": f"{device['sku']}|{device['device']}",
+                    "name": device.get("deviceName", "Unknown"),
+                    "model": device["sku"],
+                    "device": device["device"],
+                    "controllable": True,
+                    "state": "unknown"
+                })
+
+            return make_json_response(result, headers_dict)
+
+        except Exception as e:
+            return make_json_response({"error": str(e)}, headers_dict, 500)
+
+    # Route: Control device
+    if "/govee/devices/" in path and method == "POST":
+        try:
+            # Parse device_id and action from path
+            # Path format: /govee/devices/{device_id}/{action}
+            parts = path.split("/govee/devices/")[1].split("/")
+
+            if len(parts) < 2:
+                return make_json_response({"error": "Invalid path format"}, headers_dict, 400)
+
             device_id = parts[0]
-            action = parts[1]
-            return await govee_control(env, device_id, action, cors_headers)
+            action = parts[1].lower()
 
-    # Not found
-    return json_response({"error": "Not found"}, cors_headers, 404)
+            if action not in ["on", "off"]:
+                return make_json_response({"error": "Action must be 'on' or 'off'"}, headers_dict, 400)
 
+            # Parse device_id
+            device_parts = device_id.split("|")
+            if len(device_parts) != 2:
+                return make_json_response({"error": "Invalid device ID"}, headers_dict, 400)
 
-async def govee_request(env, path, method="GET", body=None):
-    """Make request to Govee API"""
-    url = f"https://openapi.api.govee.com{path}"
+            sku = device_parts[0]
+            device = device_parts[1]
+            value = 1 if action == "on" else 0
 
-    headers = {
-        "Govee-API-Key": env.GOVEE_API_KEY,
-        "Content-Type": "application/json"
-    }
-
-    options = {
-        "method": method,
-        "headers": Headers.new(headers)
-    }
-
-    if body:
-        options["body"] = json.dumps(body)
-
-    response = await fetch(url, options)
-    data = await response.json()
-
-    return data
-
-
-async def govee_discover(env, cors_headers):
-    """Discover Govee devices"""
-    try:
-        data = await govee_request(env, "/router/api/v1/user/devices", "GET")
-
-        if data.get("code") != 200:
-            return json_response(
-                {"error": "Failed to discover devices", "details": data},
-                cors_headers,
-                502
-            )
-
-        devices = data.get("data", [])
-
-        # Cache in KV
-        await env.DEVICES_KV.put("govee_devices", json.dumps(devices), expirationTtl=3600)
-
-        # Fetch state for each device
-        devices_with_state = []
-        for device in devices:
-            try:
-                sku = device["sku"]
-                device_id = device["device"]
-
-                state_data = await govee_request(
-                    env,
-                    "/router/api/v1/device/state",
-                    "POST",
-                    {
-                        "requestId": generate_uuid(),
-                        "payload": {
-                            "sku": sku,
-                            "device": device_id
-                        }
-                    }
-                )
-
-                capabilities = state_data.get("payload", {}).get("capabilities", [])
-                power_state = "unknown"
-                online = None
-
-                for cap in capabilities:
-                    if cap.get("type") == "devices.capabilities.online":
-                        online = bool(cap.get("state", {}).get("value"))
-                    if cap.get("type") == "devices.capabilities.on_off" and cap.get("instance") == "powerSwitch":
-                        power_state = "on" if cap.get("state", {}).get("value") == 1 else "off"
-
-                devices_with_state.append({
-                    "id": f"{sku}|{device_id}",
-                    "name": state_data.get("payload", {}).get("deviceName") or device.get("deviceName"),
-                    "model": sku,
-                    "device": device_id,
-                    "controllable": True,
-                    "retrievable": True,
-                    "state": power_state,
-                    "online": online
-                })
-            except Exception as e:
-                # Add device with unknown state on error
-                devices_with_state.append({
-                    "id": f"{device['sku']}|{device['device']}",
-                    "name": device.get("deviceName"),
-                    "model": device["sku"],
-                    "device": device["device"],
-                    "controllable": True,
-                    "retrievable": True,
-                    "state": "unknown",
-                    "online": None
-                })
-
-        return json_response(devices_with_state, cors_headers)
-
-    except Exception as e:
-        return json_response({"error": str(e)}, cors_headers, 500)
-
-
-async def govee_list_devices(env, cors_headers):
-    """List Govee devices from cache"""
-    try:
-        # Get from cache
-        cached = await env.DEVICES_KV.get("govee_devices")
-
-        if not cached:
-            # Trigger discovery
-            return await govee_discover(env, cors_headers)
-
-        devices = json.loads(cached)
-
-        # Fetch current state
-        devices_with_state = []
-        for device in devices:
-            try:
-                sku = device["sku"]
-                device_id = device["device"]
-
-                state_data = await govee_request(
-                    env,
-                    "/router/api/v1/device/state",
-                    "POST",
-                    {
-                        "requestId": generate_uuid(),
-                        "payload": {
-                            "sku": sku,
-                            "device": device_id
-                        }
-                    }
-                )
-
-                capabilities = state_data.get("payload", {}).get("capabilities", [])
-                power_state = "unknown"
-                online = None
-
-                for cap in capabilities:
-                    if cap.get("type") == "devices.capabilities.online":
-                        online = bool(cap.get("state", {}).get("value"))
-                    if cap.get("type") == "devices.capabilities.on_off" and cap.get("instance") == "powerSwitch":
-                        power_state = "on" if cap.get("state", {}).get("value") == 1 else "off"
-
-                devices_with_state.append({
-                    "id": f"{sku}|{device_id}",
-                    "name": state_data.get("payload", {}).get("deviceName") or device.get("deviceName"),
-                    "model": sku,
-                    "device": device_id,
-                    "controllable": True,
-                    "retrievable": True,
-                    "state": power_state,
-                    "online": online
-                })
-            except Exception:
-                devices_with_state.append({
-                    "id": f"{device['sku']}|{device['device']}",
-                    "name": device.get("deviceName"),
-                    "model": device["sku"],
-                    "device": device["device"],
-                    "controllable": True,
-                    "retrievable": True,
-                    "state": "unknown",
-                    "online": None
-                })
-
-        return json_response(devices_with_state, cors_headers)
-
-    except Exception as e:
-        return json_response({"error": str(e)}, cors_headers, 500)
-
-
-async def govee_control(env, device_id, action, cors_headers):
-    """Control Govee device"""
-    try:
-        action = action.lower()
-        if action not in ["on", "off"]:
-            return json_response({"error": "Invalid action. Use 'on' or 'off'"}, cors_headers, 400)
-
-        parts = device_id.split("|")
-        if len(parts) != 2:
-            return json_response({"error": "Invalid device ID format"}, cors_headers, 400)
-
-        sku, device = parts
-        value = 1 if action == "on" else 0
-
-        # Send control command
-        await govee_request(
-            env,
-            "/router/api/v1/device/control",
-            "POST",
-            {
-                "requestId": generate_uuid(),
+            # Call Govee control API
+            control_url = "https://openapi.api.govee.com/router/api/v1/device/control"
+            control_body = {
+                "requestId": "req-" + str(hash(device_id))[-8:],
                 "payload": {
                     "sku": sku,
                     "device": device,
@@ -249,53 +137,48 @@ async def govee_control(env, device_id, action, cors_headers):
                     }
                 }
             }
-        )
 
-        # Fetch updated state
-        state_data = await govee_request(
-            env,
-            "/router/api/v1/device/state",
-            "POST",
-            {
-                "requestId": generate_uuid(),
-                "payload": {"sku": sku, "device": device}
-            }
-        )
+            control_headers = Headers.new({
+                "Govee-API-Key": env.GOVEE_API_KEY,
+                "Content-Type": "application/json"
+            })
 
-        capabilities = state_data.get("payload", {}).get("capabilities", [])
-        power_state = "unknown"
-        online = None
+            control_response = await fetch(
+                control_url,
+                Object.new(
+                    method="POST",
+                    headers=control_headers,
+                    body=json.dumps(control_body)
+                )
+            )
 
-        for cap in capabilities:
-            if cap.get("type") == "devices.capabilities.online":
-                online = bool(cap.get("state", {}).get("value"))
-            if cap.get("type") == "devices.capabilities.on_off" and cap.get("instance") == "powerSwitch":
-                power_state = "on" if cap.get("state", {}).get("value") == 1 else "off"
+            result_data = await control_response.json()
 
-        return json_response({
-            "id": device_id,
-            "name": state_data.get("payload", {}).get("deviceName"),
-            "model": sku,
-            "device": device,
-            "controllable": True,
-            "retrievable": True,
-            "state": power_state,
-            "online": online
-        }, cors_headers)
+            if result_data.get("code") != 200:
+                return make_json_response({
+                    "error": "Govee control failed",
+                    "details": result_data
+                }, headers_dict, 502)
 
-    except Exception as e:
-        return json_response({"error": str(e)}, cors_headers, 500)
+            return make_json_response({
+                "id": device_id,
+                "model": sku,
+                "device": device,
+                "state": action,
+                "success": True
+            }, headers_dict)
+
+        except Exception as e:
+            return make_json_response({"error": str(e)}, headers_dict, 500)
+
+    # Not found
+    return make_json_response({"error": "Not found", "path": path}, headers_dict, 404)
 
 
-def json_response(data, headers, status=200):
-    """Create JSON response"""
+def make_json_response(data, headers_dict, status=200):
+    """Helper to create JSON response"""
     return Response.new(
         json.dumps(data),
         status=status,
-        headers=Headers.new(headers)
+        headers=Headers.new(headers_dict)
     )
-
-
-def generate_uuid():
-    """Generate a simple UUID"""
-    return str(uuid.uuid4())
