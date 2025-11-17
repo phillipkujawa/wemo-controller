@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pywemo
+requests
+pydantic
+paho-mqtt
+sse-starlette

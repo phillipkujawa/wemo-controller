@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WeMo + Govee Controller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 1.25rem 2rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: rgba(15,23,42,0.9);
+      border-bottom: 1px solid rgba(148,163,184,0.25);
+      backdrop-filter: blur(8px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    h1 span.logo-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 12px #22c55eaa;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 0.55rem 1.1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #22c55e;
+      color: #022c22;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      box-shadow: 0 0 0 1px rgba(15,23,42,0.5);
+      transition: transform 0.05s ease-out, box-shadow 0.05s ease-out, background 0.12s, opacity 0.12s;
+    }
+
+    button.secondary {
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    button:active {
+      transform: translateY(1px);
+      box-shadow: 0 0 0 1px rgba(15,23,42,0.85);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+      transform: none;
+      box-shadow: none;
+    }
+
+    main {
+      padding: 1.25rem 2rem 2rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .status-line {
+      font-size: 0.85rem;
+      color: #9ca3af;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+    }
+
+    .error {
+      color: #fecaca;
+      font-size: 0.85rem;
+      min-height: 1.2em;
+    }
+
+    .devices-grid {
+      margin-top: 0.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+
+    .section-title {
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+    }
+
+    .device-card {
+      background: radial-gradient(circle at top left, #1e293b, #020617);
+      border-radius: 1rem;
+      padding: 1rem;
+      border: 1px solid rgba(148,163,184,0.25);
+      box-shadow: 0 18px 35px rgba(15,23,42,0.65);
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .device-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .device-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .device-name {
+      font-weight: 600;
+      font-size: 1rem;
+      word-break: break-word;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.35);
+      color: #cbd5f5;
+      white-space: nowrap;
+    }
+
+    .device-rename-btn {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+    }
+
+    .device-meta {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .state-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .state-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.18rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(148,163,184,0.4);
+    }
+
+    .state-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #f97316;
+    }
+
+    .state-dot.on {
+      background: #22c55e;
+    }
+
+    .state-dot.standby {
+      background: #eab308;
+    }
+
+    .card-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.2rem;
+    }
+
+    .card-buttons button {
+      flex: 1 1 70px;
+      justify-content: center;
+    }
+
+    .insight-info {
+      margin-top: 0.4rem;
+      font-size: 0.78rem;
+      color: #9ca3af;
+      border-top: 1px dashed rgba(148,163,184,0.3);
+      padding-top: 0.35rem;
+    }
+
+    .insight-info div {
+      margin-bottom: 0.15rem;
+    }
+
+    .muted {
+      opacity: 0.8;
+      font-size: 0.9rem;
+      color: #9ca3af;
+    }
+
+    @media (max-width: 640px) {
+      header, main {
+        padding-inline: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>
+      <span class="logo-dot"></span>
+      WeMo + Govee Controller
+    </h1>
+    <div class="toolbar">
+      <button id="discoverBtn" type="button">
+        🔍 Discover WeMo
+      </button>
+      <button id="refreshBtn" class="secondary" type="button">
+        ↻ Refresh WeMo
+      </button>
+
+      <button id="goveeDiscoverBtn" type="button">
+        🌈 Discover Govee
+      </button>
+      <button id="goveeRefreshBtn" class="secondary" type="button">
+        ↻ Refresh Govee
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="status-line">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText">Ready.</span>
+    </div>
+    <div id="errorText" class="error"></div>
+
+    <h2 class="section-title">WeMo devices</h2>
+    <div id="devicesGrid" class="devices-grid"></div>
+
+    <h2 class="section-title">Govee devices</h2>
+    <div id="goveeGrid" class="devices-grid"></div>
+  </main>
+
+  <script>
+    const API_BASE = "http://localhost:8002";
+
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const errorText = document.getElementById("errorText");
+
+    const devicesGrid = document.getElementById("devicesGrid");
+    const goveeGrid = document.getElementById("goveeGrid");
+
+    const discoverBtn = document.getElementById("discoverBtn");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const goveeDiscoverBtn = document.getElementById("goveeDiscoverBtn");
+    const goveeRefreshBtn = document.getElementById("goveeRefreshBtn");
+
+    // Store current device states
+    let wemoDevices = [];
+    let goveeDevices = [];
+    let eventSource = null;
+
+    function setStatus(text, isBusy = false) {
+      statusText.textContent = text;
+      statusDot.style.background = isBusy ? "#eab308" : "#22c55e";
+    }
+
+    function setError(text) {
+      errorText.textContent = text || "";
+    }
+
+    async function safeText(res) {
+      try {
+        return await res.text();
+      } catch {
+        return "";
+      }
+    }
+
+    // -----------------------------
+    // Server-Sent Events (Real-time updates)
+    // -----------------------------
+    function connectEventStream() {
+      if (eventSource) {
+        eventSource.close();
+      }
+
+      eventSource = new EventSource(`${API_BASE}/events`);
+
+      eventSource.addEventListener('connected', (e) => {
+        console.log('Connected to event stream');
+        setStatus('Connected to real-time updates');
+      });
+
+      eventSource.addEventListener('wemo_state_change', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('WeMo state change:', data);
+        // Update local state and re-render
+        const idx = wemoDevices.findIndex(d => d.id === data.deviceId);
+        if (idx !== -1) {
+          wemoDevices[idx] = data.state;
+          renderDevices(wemoDevices);
+        }
+        setStatus(`WeMo device ${data.deviceId} turned ${data.action}`);
+      });
+
+      eventSource.addEventListener('govee_state_change', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Govee state change:', data);
+        // Update local state and re-render
+        const idx = goveeDevices.findIndex(d => d.id === data.deviceId);
+        if (idx !== -1) {
+          goveeDevices[idx] = data.state;
+          renderGoveeDevices(goveeDevices);
+        }
+        setStatus(`Govee device turned ${data.action}`);
+      });
+
+      eventSource.addEventListener('govee_event', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('Govee event:', data);
+        setStatus(`Govee event: ${data.eventType} on ${data.deviceName}`);
+        setError(`Event from ${data.deviceName}: ${JSON.stringify(data.state)}`);
+      });
+
+      eventSource.onerror = (e) => {
+        console.error('EventSource error:', e);
+        setError('Real-time connection lost. Reconnecting...');
+        // Reconnect after a delay
+        setTimeout(() => {
+          connectEventStream();
+        }, 5000);
+      };
+    }
+
+    // -----------------------------
+    // WeMo functions
+    // -----------------------------
+    async function discoverDevices() {
+      setError("");
+      setStatus("Discovering WeMo devices on your LAN…", true);
+      discoverBtn.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/discover`, { method: "POST" });
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Discover failed (${res.status}): ${msg}`);
+        }
+        wemoDevices = await res.json();
+        renderDevices(wemoDevices);
+        setStatus(`Discovered ${wemoDevices.length} WeMo device(s).`);
+      } catch (err) {
+        console.error(err);
+        setError("Error discovering WeMo devices. Check that the backend is running and this machine is on the same network as your WeMo plugs.");
+        setStatus("WeMo discovery failed.");
+      } finally {
+        discoverBtn.disabled = false;
+      }
+    }
+
+    async function loadDevices() {
+      setError("");
+      setStatus("Loading WeMo devices…", true);
+      try {
+        const res = await fetch(`${API_BASE}/devices`);
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Load failed (${res.status}): ${msg}`);
+        }
+        wemoDevices = await res.json();
+        renderDevices(wemoDevices);
+        setStatus(`Loaded ${wemoDevices.length} WeMo device(s).`);
+      } catch (err) {
+        console.error(err);
+        setError("Error loading WeMo devices. Try discovering devices first.");
+        setStatus("WeMo load failed.");
+      }
+    }
+
+    async function sendCommand(deviceId, command) {
+      setError("");
+      setStatus(`Sending '${command}' to ${deviceId}…`, true);
+      try {
+        const res = await fetch(
+          `${API_BASE}/devices/${encodeURIComponent(deviceId)}/${command}`,
+          { method: "POST" }
+        );
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Command failed (${res.status}): ${msg}`);
+        }
+        await loadDevices();
+        setStatus(`Command '${command}' sent to ${deviceId}.`);
+      } catch (err) {
+        console.error(err);
+        setError("WeMo command failed. Check that the device is reachable.");
+        setStatus("WeMo command failed.");
+      }
+    }
+
+    async function renameDevice(deviceId, currentName) {
+      const suggested = currentName || deviceId;
+      const newName = window.prompt("Enter a new name for this device:", suggested);
+
+      if (newName === null) {
+        return;
+      }
+
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === suggested) {
+        return;
+      }
+
+      setError("");
+      setStatus(`Renaming ${suggested}…`, true);
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/devices/${encodeURIComponent(deviceId)}/rename`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: trimmed }),
+          }
+        );
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Rename failed (${res.status}): ${msg}`);
+        }
+
+        await loadDevices();
+        setStatus(`Renamed '${suggested}' to '${trimmed}'.`);
+      } catch (err) {
+        console.error(err);
+        setError("Rename failed. Check the backend logs for details.");
+        setStatus("Rename failed.");
+      }
+    }
+
+    function renderDevices(devices) {
+      devicesGrid.innerHTML = "";
+
+      if (!devices || devices.length === 0) {
+        devicesGrid.innerHTML =
+          '<p class="muted">No WeMo devices known yet. Click “Discover WeMo” to scan your network.</p>';
+        return;
+      }
+
+      for (const d of devices) {
+        const card = document.createElement("div");
+        card.className = "device-card";
+
+        const header = document.createElement("div");
+        header.className = "device-header";
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "device-name";
+        nameEl.textContent = d.name || d.id;
+
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        const looksLikeInsight = d.model && /insight/i.test(d.model);
+        badge.textContent = looksLikeInsight ? "Insight plug" : "Smart plug";
+
+        const renameBtn = document.createElement("button");
+        renameBtn.type = "button";
+        renameBtn.textContent = "Rename";
+        renameBtn.classList.add("secondary", "device-rename-btn");
+        renameBtn.onclick = () => renameDevice(d.id, d.name || d.id);
+
+        const headerRight = document.createElement("div");
+        headerRight.className = "device-header-right";
+        headerRight.appendChild(badge);
+        headerRight.appendChild(renameBtn);
+
+        header.appendChild(nameEl);
+        header.appendChild(headerRight);
+
+        const meta = document.createElement("div");
+        meta.className = "device-meta";
+        const addr =
+          d.host && d.port ? `${d.host}:${d.port}` : (d.host || "no IP");
+        meta.textContent = `${d.model || "WeMo device"} • ${addr}`;
+
+        const stateRow = document.createElement("div");
+        stateRow.className = "state-row";
+
+        const statePill = document.createElement("span");
+        statePill.className = "state-pill";
+
+        const stateDot = document.createElement("span");
+        stateDot.className = "state-dot";
+
+        const stateLabel = document.createElement("span");
+
+        let label = "Unknown";
+        if (d.state === 1) {
+          label = "On";
+          stateDot.classList.add("on");
+        } else if (d.state === 0 || d.state === null) {
+          label = "Off";
+        } else if (d.state === 8) {
+          label = "Standby";
+          stateDot.classList.add("standby");
+        } else if (typeof d.state === "number") {
+          label = `State ${d.state}`;
+        }
+
+        stateLabel.textContent = label;
+
+        statePill.appendChild(stateDot);
+        statePill.appendChild(stateLabel);
+        stateRow.appendChild(statePill);
+
+        const btnRow = document.createElement("div");
+        btnRow.className = "card-buttons";
+
+        const onBtn = document.createElement("button");
+        onBtn.type = "button";
+        onBtn.textContent = "On";
+        onBtn.onclick = () => sendCommand(d.id, "on");
+
+        const offBtn = document.createElement("button");
+        offBtn.type = "button";
+        offBtn.textContent = "Off";
+        offBtn.classList.add("secondary");
+        offBtn.onclick = () => sendCommand(d.id, "off");
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.textContent = "Toggle";
+        toggleBtn.onclick = () => sendCommand(d.id, "toggle");
+
+        btnRow.appendChild(onBtn);
+        btnRow.appendChild(offBtn);
+        btnRow.appendChild(toggleBtn);
+
+        card.appendChild(header);
+        card.appendChild(meta);
+        card.appendChild(stateRow);
+        card.appendChild(btnRow);
+
+        if (d.insight_params) {
+          const insight = document.createElement("div");
+          insight.className = "insight-info";
+
+          const currentPower = parseFloat(d.insight_params.currentpower ?? 0);
+          const todayMw = parseFloat(d.insight_params.todaymw ?? 0);
+
+          const p1 = document.createElement("div");
+          p1.textContent =
+            !isNaN(currentPower)
+              ? `Current power: ${(currentPower / 1000).toFixed(2)} W`
+              : "Current power: n/a";
+
+          const p2 = document.createElement("div");
+          p2.textContent =
+            !isNaN(todayMw)
+              ? `Today: ${(todayMw / 1000).toFixed(2)} Wh`
+              : "Today usage: n/a";
+
+          insight.appendChild(p1);
+          insight.appendChild(p2);
+          card.appendChild(insight);
+        }
+
+        devicesGrid.appendChild(card);
+      }
+    }
+
+    // -----------------------------
+    // Govee functions
+    // -----------------------------
+    async function discoverGoveeDevices() {
+      setError("");
+      setStatus("Discovering Govee devices from cloud…", true);
+      goveeDiscoverBtn.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/govee/discover`, { method: "POST" });
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Govee discover failed (${res.status}): ${msg}`);
+        }
+        goveeDevices = await res.json();
+        renderGoveeDevices(goveeDevices);
+        setStatus(`Discovered ${goveeDevices.length} Govee device(s).`);
+      } catch (err) {
+        console.error(err);
+        setError("Error discovering Govee devices. Check API key & backend logs.");
+        setStatus("Govee discovery failed.");
+      } finally {
+        goveeDiscoverBtn.disabled = false;
+      }
+    }
+
+    async function loadGoveeDevices() {
+      setError("");
+      setStatus("Loading Govee devices…", true);
+      try {
+        const res = await fetch(`${API_BASE}/govee/devices`);
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Govee load failed (${res.status}): ${msg}`);
+        }
+        goveeDevices = await res.json();
+        renderGoveeDevices(goveeDevices);
+        setStatus(`Loaded ${goveeDevices.length} Govee device(s).`);
+      } catch (err) {
+        console.error(err);
+        setError("Error loading Govee devices.");
+        setStatus("Govee load failed.");
+      }
+    }
+
+    async function sendGoveeCommand(deviceId, action) {
+      setError("");
+      setStatus(`Sending '${action}' to Govee device…`, true);
+      try {
+        const res = await fetch(
+          `${API_BASE}/govee/devices/${encodeURIComponent(deviceId)}/${action}`,
+          { method: "POST" }
+        );
+        if (!res.ok) {
+          const msg = await safeText(res);
+          throw new Error(`Govee command failed (${res.status}): ${msg}`);
+        }
+        await loadGoveeDevices();
+        setStatus(`Govee device ${action} command sent.`);
+      } catch (err) {
+        console.error(err);
+        setError("Govee command failed. Check backend logs.");
+        setStatus("Govee command failed.");
+      }
+    }
+
+    function renderGoveeDevices(devices) {
+      goveeGrid.innerHTML = "";
+
+      if (!devices || devices.length === 0) {
+        goveeGrid.innerHTML =
+          '<p class="muted">No Govee devices yet. Click “Discover Govee”.</p>';
+        return;
+      }
+
+      for (const d of devices) {
+        const card = document.createElement("div");
+        card.className = "device-card";
+
+        const header = document.createElement("div");
+        header.className = "device-header";
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "device-name";
+        nameEl.textContent = d.name || `${d.model} (${d.device.slice(-4)})`;
+
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = "Govee";
+
+        const headerRight = document.createElement("div");
+        headerRight.className = "device-header-right";
+        headerRight.appendChild(badge);
+        header.appendChild(nameEl);
+        header.appendChild(headerRight);
+
+        const meta = document.createElement("div");
+        meta.className = "device-meta";
+        const onlineLabel =
+          d.online === true ? "online" : d.online === false ? "offline" : "unknown";
+        meta.textContent = `${d.model} • ${d.device} • ${onlineLabel}`;
+
+        const stateRow = document.createElement("div");
+        stateRow.className = "state-row";
+
+        const statePill = document.createElement("span");
+        statePill.className = "state-pill";
+
+        const stateDot = document.createElement("span");
+        stateDot.className = "state-dot";
+
+        const stateLabel = document.createElement("span");
+        const state = (d.state || "unknown").toLowerCase();
+        if (state === "on") {
+          stateDot.classList.add("on");
+          stateLabel.textContent = "On";
+        } else if (state === "off") {
+          stateLabel.textContent = "Off";
+        } else {
+          stateLabel.textContent = state;
+        }
+
+        statePill.appendChild(stateDot);
+        statePill.appendChild(stateLabel);
+        stateRow.appendChild(statePill);
+
+        const btnRow = document.createElement("div");
+        btnRow.className = "card-buttons";
+
+        const onBtn = document.createElement("button");
+        onBtn.type = "button";
+        onBtn.textContent = "On";
+        onBtn.onclick = () => sendGoveeCommand(d.id, "on");
+
+        const offBtn = document.createElement("button");
+        offBtn.type = "button";
+        offBtn.textContent = "Off";
+        offBtn.classList.add("secondary");
+        offBtn.onclick = () => sendGoveeCommand(d.id, "off");
+
+        btnRow.appendChild(onBtn);
+        btnRow.appendChild(offBtn);
+
+        card.appendChild(header);
+        card.appendChild(meta);
+        card.appendChild(stateRow);
+        card.appendChild(btnRow);
+
+        goveeGrid.appendChild(card);
+      }
+    }
+
+    // -----------------------------
+    // Wire up buttons & initial load
+    // -----------------------------
+    discoverBtn.addEventListener("click", () => {
+      discoverDevices();
+    });
+
+    refreshBtn.addEventListener("click", () => {
+      loadDevices();
+    });
+
+    goveeDiscoverBtn.addEventListener("click", () => {
+      discoverGoveeDevices();
+    });
+
+    goveeRefreshBtn.addEventListener("click", () => {
+      loadGoveeDevices();
+    });
+
+    // Initial load and connect to event stream
+    loadDevices();
+    loadGoveeDevices();
+    connectEventStream();
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    });
+  </script>
+</body>
+</html>

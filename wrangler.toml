@@ -1,0 +1,31 @@
+name = "wemo-govee-controller"
+main = "src/worker.py"
+compatibility_date = "2024-11-16"
+
+# Use Python Workers
+workers_dev = true
+
+# Environment variables
+[vars]
+# Add your Govee API key here or use wrangler secret
+# GOVEE_API_KEY = "your-api-key-here"
+
+# Secrets (use: wrangler secret put GOVEE_API_KEY)
+# GOVEE_API_KEY
+
+# Durable Objects (for maintaining state)
+[[durable_objects.bindings]]
+name = "DEVICE_STATE"
+class_name = "DeviceState"
+
+# KV namespace for device storage (optional)
+[[kv_namespaces]]
+binding = "DEVICE_KV"
+id = "your-kv-namespace-id"
+
+# Python compatibility
+[build]
+command = "pip install -r requirements.txt -t lib"
+
+[build.upload]
+format = "service-worker"
